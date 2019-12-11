@@ -1,0 +1,430 @@
+---
+title: "axiom8_setup"
+author: "Avni Gupta"
+date: "1/3/2019aa"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## Description
+
+10/1/18 Bioinformatic Analysis for DARPA_7_SAX (all seven plates combined) with r/qtl2
+
+Running with 490 (but 501 animals on array because we genotyped Katie metab animals and a couple DOs that died) Schneider DOs and 425,286 recommended SNPs (PolyHighResolution probes) actually 425272 because 14 were on MT chromosome) (total 616,136 probe sets on the array)
+
+Note: 1 animal from DARPA_3 (D172), 1 animal from DARPA_5 (B84.1), 11 animals from DARPA_6 (, and 4 animals from DARPA_7 (H503, D172.1, B86.1, B87.1) did not pass the analysis QC.
+
+Note: 655 total sample calls
+Note: never ran F373 because we sac'd her on Day 0 Sampling because she had a squished, necrotic tail
+
+## Part 1: Download and organize files
+
+### 1) Download data file from Engyte using password
+### 2) Make backup copy
+### 3) Unzip whole folder
+### 4) reconstruct cluster folder:
+
+Open 7-Zip file manager, navigate to the folder, right-click on the first file in the sequence (has .zip.001 extension), and select "Combine Files". This only works if you choose the first file in the sequence. To combine 6 zip files to reconstruct the cluster folder in this case, it took 6 min 15 sec.
+
+### 5) Unzip cluster folder (extract)
+
+## Part 2: Axiom Analysis Suite
+
+### 1) Import Existing Analysis data into AxiomAnalysisSuite
+
+Dashboard>Browse for Existing Analysis Result: cluster>cluster (make sure you unzip this folder before trying to access it through AxiomAnalysisSuite)
+10/1/18 8:12pm (2min)
+
+### 2) Select Annotation
+
+SNP Summary Table>Select Annotation:
+PRO1000156_DARPA_6_SAX>AxiomReference>Axiom_MouseHD_Annotation.r1.db>Axiom_MouseHD_r1.20161027.annot
+(make sure you unzip this folder before trying to access it through AxiomAnalysisSuite)
+
+#### 2.1) Select Annotation Columns to add (5 columns): affy_snp_id_annot, Chromosome, Chromosome Start, Allele A, Allele B
+
+### 3) Export Genotyping Data
+
+SNP Summary Table>Export> Export Genotyping Data
+
+Result Output Formats: TXT
+Call Output Formats: Call Codes (this gives you AA, AB, BB and NoCall)
+SNP List Filter: cluster_final>SNPolisher>PolyHighResolution.ps (reroute to this for every new analysis because it will use old one as default)
+
+Output Name: axiom8_raw
+
+Annotation File: PRO100176_DARPA_7_SAX>AxiomReference>Axiom_MouseHD_Annotation.r1.db> (make sure you unzip this folder before trying to access it through AxiomAnalysisSuite) >Axiom_MouseHD_r1.20161027.annot  (reroute to this for every new analysis because it will use old one as default)
+
+ Export with "affy_snp_id_annot", "Chromosome", "Chromosome Start", "Allele A", "Allele B"
+
+Export with "probeset_ID", "Chr_id", "Start", "Allele_A", "Allele_B"
+
+10/1/18 8:15pm-8:17pm
+
+
+
+### 4) Save this from .txt file to .csv file (r/qtl2 uses only csv)
+
+In order to do this, open the .txt file in Excel using "delimited" by "tab" setting and then save as. this will freeze up computer a little bit...
+
+### 5) Delete description rows at the top of the spreadsheet
+
+
+
+### 6) Rename as axiom8_rawrenamed and replace Best Array Sample Name with actual Sample Names
+
+Find the ".CEL_call_code" extensions on the Best Array Sample Name in genotyping spreadsheet and replace with nothing
+
+axiom8 had 655 replacements (for 655 samples)
+
+make VLookup File from PRO100079_DARPA_4_SAX_Sample_Table.xlsx file and PRO1000126_DARPA_5_SAX_Sample_Table.xlsx and PRO1000156_DARPA_6_SAX_Sample_Table.xlsx file  (combine the three files) in which the "Best Array" column is before "Sample Name" column
+
+use VLOOKUP function in Excel to switch Best Array Sample Name to Schneider/Monack Sample Name (=VLOOKUP(B2,'[VLookup File.xlsx]Sample Table'!$A:$E,5,FALSE))
+
+replace the "Best Array Sample Name" row with the new "Sample Name" row by using Copy and Paste Special and then delete the top equation row.
+
+
+
+## Part 3: Data Manipulation in Excel and R
+
+### 1) Open axiom8_rawrenamed
+```{r}
+
+library(readr)
+library(tidyverse)
+library(readxl)
+axiom8_raw <- read_csv("axiom8_rawrenamed.csv")
+axiom8_cM <- read_csv("axiom8_616136snps_cM.csv")
+axiom8_samples <- read_excel("axiom8_samples.xlsx")
+
+
+
+# Rename annotation columns to "marker", "chr", "pos", "A1", "A2"  
+axiom8_raw_renamed <- axiom8_raw %>%
+  rename(marker = probeset_id, chr = Chr_id, pos = Start, A1 = Allele_A, A2 = Allele_B) %>%
+  # fill cM based on marker
+  merge(axiom8_cM,by = "marker") %>%
+  # Convert pos from bp (what Axiom exports as) to Mbp (what DOQTL in R reads) by dividing by 1,000,000
+  mutate(pos=replace(x = pos,values =  pos/1000000)) %>%
+  # Order by chromosome and then by position
+  arrange(chr,pos) %>%
+  # Delete Y ("21") and MT ("22") chromosome SNPs (axiom8 has 14 SNPs on MT chromosome, 0 SNPs on Y chromosome)
+  filter(chr!= 22) %>%
+  #  Change chromosome 20 to read "X" (axiom8 has 4958 SNPs on X chromosome)
+  mutate(chr = replace(x =chr, (chr==20),values = "X"))
+
+
+columnnames <- tibble(`Best Array` = names(axiom8_raw_renamed))
+
+
+combined <- left_join(columnnames,axiom8_samples, by = "Best Array")
+combined$`Sample Name` <-ifelse(is.na(combined$`Sample Name`)==T, combined$`Best Array`, combined$`Sample Name`)
+
+names(axiom8_raw_renamed) <- combined$`Sample Name` 
+axiom8_geno <-  axiom8_raw_renamed[,order(colnames(axiom8_raw_renamed))] %>%
+  select(marker, chr, pos, cM, A1, A2, pos, Affy_SNP_ID, everything())
+
+axiom8_geno_DO <- axiom8_geno %>%
+  select(-(2:112),-(163:211))
+
+names(axiom8_geno_DO)[c(351,371,383,387,411,412)] <- substr(names(axiom8_geno_DO)[c(351,371,383,387,411,412)],1,nchar(names(axiom8_geno_DO)[c(351,371,383,387,411,412)])-2)
+
+
+
+f <- file("axiom8_geno.csv", "w")
+writeLines("#genotype data for axiom8",f)
+writeLines("#nrow 425272",f)
+writeLines("#ncol 502",f)
+write.csv(x = axiom8_geno_DO, file = f,row.names = F)
+close(f)
+axiom8_snps <- axiom8_raw_renamed %>%
+  select(marker, chr, pos, cM,A1,A2)
+
+
+axiom8_parents <- axiom8_geno %>%
+  select(1,163:211)
+
+axiom8_parents %>%
+  gather(key = "marker", value = )
+
+
+
+
+```
+2) make two excel workbook copies: 1) snps 2) geno
+
+
+
+ 1) geno:  Delete annotation data
+
+Order columns by Sample IDs
+
+ Sort>Options>Sort left to right>sort by row 1
+
+Make sure marker column is still at the left-most
+
+Fix the Cs- make sure C93-C99 is before C100 (this should be fine now because I changed the vlookup to make C93->C093 and so on)
+
+
+
+ 2) snps:  Delete all sample data
+
+
+
+3) Make copy of geno file- call it parents- delete all non-parent samples (there are 500 animals from not batch B)
+
+Delete all parent samples from geno file (there are 51 animals from batch B)
+
+
+
+4) Manipulate geno file in Excel
+
+Change G398.1 to G398, G418.1 to G418, G430.1 to G430, G434.1 to G434, G458.1 to G458, G459.1 to G459
+
+Add three rows at the top of geno to read in notes
+
+# genotype data for axiom8
+
+# nrow 425272
+
+# ncol 502
+
+Add "marker" colname above all the snps
+
+
+
+
+
+5) Manipulate parents table in Excel (call new sheet parents_1)- make new column after every set of mice
+
+ B53 - B57= A/J
+
+ B58 - B62=C57BL/6J
+
+ B63 - B67=129S1/SvImJ
+
+ B68 - B72=NOD/ShiLtJ
+
+ B73 - B77=NZO/HlLtJ
+
+ B78 - B82= PWK/PhJ
+
+ B83 - B87=CAST/EiJ
+
+ B88 - B92= WSB/EiJ
+
+ In this new column run this excel command (use first command if more than 2 replicates, use second command if only two replicates-didn't happen here)
+
+=INDEX(B5:D5,MODE(MATCH(B5:D5,B5:D5,0)))
+
+=IF(W2="NoCall", X2, W2)
+
+ Delete all the B batch mice columns
+
+Convert all the #N/A to NoCall (This happens when Excel can't find a clear most frequently occurring text) (This happened 1077 times in axiom8)
+
+
+
+6) Manipulate parents file in Excel
+
+Make copy of parents file and call it axiom8_foundergeno
+
+Replace all the "AB" with "NoCall" (in axiom8, 8376 replacements)
+
+Add three rows at the top of gmap to read in notes
+
+# founder genotype data for axiom8
+
+# nrow 425272
+
+# ncol 9
+
+Change founder strains to letters
+
+A/J= A
+
+C57BL/6J= B
+
+129S1/SvImJ=C
+
+NOD/ShiLtJ= D
+
+NZO/HlLtJ= E
+
+PWK/PhJ= F
+
+CAST/EiJ= G
+
+WSB/EiJ= H
+
+
+
+5) Manipulate SNPs file in Excel
+
+Make copy of axiom6_616136snps_vlookup- call it axiom8_616136snps_vlookup
+
+Use vlookup to put cM pos into axiom8_snps.csv (=VLOOKUP(A2,axiom8_616136snps_vlookup.csv!$1:$1048576,2,FALSE))
+
+This step takes a full minute..
+
+
+
+
+6) Make 2 copies of axiom8_snps: call them axiom8_gmap and axiom8_pmap
+
+In gmap, just keep marker, chr, and cM
+
+Add three rows at the top of gmap to read in notes
+
+# genetic marker map for axiom8
+# nrow 425272
+# ncol 3
+
+In pmap, just keep marker, chr, and pos
+Add three rows at the top of pmap to read in notes
+
+# physical marker map for axiom8
+# nrow 425272
+# ncol 3
+
+
+
+7) Create new csv called axiom8_covar
+
+Add three rows at the top of covar to read in notes
+
+# covariate data for axiom8
+# nrow 501
+# ncol 5
+
+Create column names in row 4 (id, Sex, Batch, ngen, StartDate)
+
+Transpose sample names from colnames of axiom6_geno1 to id column of axiom6_covar
+
+Fill in covar columns: Sex, Batch, StartDate
+
+8) Make pheno file from Tableau and Excel- follow DOPhenotypes script
+
+All phenotypes are included
+
+Lost H503 phenotype data because genotyping didn't work, other than that, all the animals that we have phenotypes for, the genotyping worked!!
+
+
+
+9) Put geno, pheno, pmap, gmap, covar, foundergeno in new folder
+
+
+
+Finished all of this 10/3/18 12:36am EST
+
+
+
+For new environments, set up using the following chunk:
+```{r}
+#Download r/qtl2
+install.packages("qtl2", repos="https://rqtl.org/qtl2cran")
+install.packages(c("devtools", "yaml", "jsonlite", "data.table", "RcppEigen", "RSQLite", "qtl"))
+##Answer yes to downloading the build tools, Windows setup will download Rtools.exe
+##This process of compiling the C++ code takes about 5-10 min
+
+#Download DOQTL
+source("https://bioconductor.org/biocLite.R")
+biocLite("DOQTL")
+```
+
+At start-up, load important packages and set up environment using the following chunk:
+```{r}
+library(devtools)
+
+library(qtl2)
+
+memory.limit(100000)
+setwd("C:/Users/Schneider Lab/Documents")
+```
+
+Once cross folder is made, do this chunk:
+```{r}
+#Create control file using qtl2geno command, works better than writing your own
+#1) make sure there are 8 alleles as "alleles" input to write_control_file
+#2) cross_info should have at least one column, with no. of generations
+#3) make sure there are no heterozygous calls in founder_geno- change all AB to NoCall
+#4) make sure if crossinfo_covar is specified, crossinfo_codes are as well
+write_control_file("C:/Users/Schneider Lab/Documents/axiom8/axiom8.json",
+                   crosstype = "do",
+                   geno_file = "axiom8_geno.csv",
+                   founder_geno_file = "axiom8_foundergeno.csv",
+                   gmap_file = "axiom8_gmap.csv",
+                   pmap_file = "axiom8_pmap.csv",
+                   pheno_file = "axiom8_pheno2.csv",
+                   covar_file = "axiom8_covar.csv",
+                   phenocovar_file = NULL,
+                   sex_file = NULL,
+                   sex_covar = "Sex",
+                   sex_codes = c(F="female", M="male"),
+                   crossinfo_file = NULL,
+                   crossinfo_covar = "ngen",
+                   crossinfo_codes = c("G23L2"=1, "G25"=1, "G26"=1, "G27"=1, "G28"=1, "G29"=1, "G30"=1),
+                   geno_codes = c(AA=1, AB=2, BB=3),
+                   alleles = c("A", "B", "C", "D", "E", "F", "G", "H"),
+                   xchr = "X",
+                   sep = ",",
+                   na.strings = c("NoCall"),
+                   comment.char = "#",
+                   geno_transposed = TRUE,
+                   founder_geno_transposed = TRUE,
+                   pheno_transposed = FALSE,
+                   covar_transposed = FALSE,
+                   phenocovar_transposed = FALSE,
+                   description = NULL,
+                   comments = NULL,
+                   overwrite = TRUE)
+
+#Create the zip file. Right-click folder -> "Send to"-> Compressed (zipped) folder
+```
+
+After zip file is made, import into R
+```{r}
+#Read data into R, providing the name and path of the zip file
+axiom8ex <- read_cross2("C:/Users/Schneider Lab/Documents/axiom7.zip", quiet=FALSE)
+#Output: large cross2 (11 elements, 809.9Mb)
+
+save(axiom8ex, file = "axiom8ex.Rda")
+```
+
+The following chunk is to make basic genotype input files that will be used for all qtls
+Don't have to repeat this chunk if you add more phenotypes
+```{r}
+#Calculate genotype probabilities
+##This computer has 8 cores, so use 8 CPU cores for parallel calculations- doesn't actually work though because we don't have enough RAM
+axiom8ex_pr <- calc_genoprob(axiom8ex, error_prob = 0.002, quiet=FALSE, cores = 1)
+#Output: r/qtl genotype probabilities (large calc_genoprob (20 elements, 48.3 Gb))
+
+#Convert genotype probabilities to allele probabilities (recommended)
+axiom8ex_apr <- genoprob_to_alleleprob(axiom8ex_pr, quiet=FALSE, cores=1)
+
+#Calculate Kinship Matrices and speed up with cores argument
+axiom8ex_kinship <- calc_kinship(axiom8ex_apr,
+                                 type= "overall",
+                                 omit_x=FALSE,
+                                 use_allele_probs= TRUE,
+                                 quiet=FALSE,
+                                 cores=1)
+
+#Obtain the particular X chromosome covariates-unnecessary because the output is null...
+axiom8ex_Xcovar <-get_x_covar(axiom8ex)
+#Output: Null value
+
+#Create numeric covariate for sex; be sure to include the individual IDs as names
+axiom8ex_sex <- (axiom8ex$covar$Sex == "male")*1
+#Name numeric covariate for sex
+names (axiom8ex_sex) <- rownames(axiom8ex$covar)
+#Output: named numeric
+
+save(axiom8ex_pr, file = "axiom8ex_pr.Rda")
+save(axiom8ex_apr, file = "axiom8ex_apr.Rda")
+save(axiom8ex_kinship, file = "axiom8ex_kinship.Rda")
+save(axiom8ex_sex, file = "axiom8ex_sex.Rda")
+save(axiom8ex_Xcovar, file = "axiom8ex_Xcovar.Rda")
+
+```
+#Ran the whole chunk on 10/2/18 at 9:52pm, finished at 
