@@ -1,0 +1,245 @@
+---
+title: "DO_Phenotypes"
+author: "Adam Kirosingh"
+date: "October 11, 2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+#setwd("~/GitHub/Diversity-Outbred-Malaria-Project/Malaria_Diversity_Outbred_Project/Setup/Creating_Phenotype_File")
+
+library(tidyverse)
+library(readr)
+
+setwd("/Volumes/Adam/DO Project/Malaria_Diversity_Outbred_Project/Setup/Processed_Data")
+Data <- read_csv("../Raw_Data/axiom8_RawData.csv")
+
+Data$Sex <- "F"
+```
+
+# Making an initial weight and temperature dataframe
+```{r}
+#This converts columns we care about to numeric
+id <- c("Temperature","Weight", "Accuri Count")
+Data[id] = data.matrix(Data[id])
+
+Day0 <- Data[Data$Day==0,]
+
+Initial <- subset(Day0, select = c("Number", "Temperature", "Weight"))
+names(Initial) <- c("Number", "Initial Temperature", "Initial Weight")
+Datai <-  merge(Data,Initial)
+
+
+```
+
+# Computing Mouse physiology parameters
+```{r}
+
+Dataic <- Datai %>%
+  # calculate percent weight relative to day 0
+  mutate(`Percent Bodyweight` = ((Datai$Weight) / (Datai$`Initial Weight`) * 100))  %>%
+  # calculate percent weight loss relative to day 0
+  mutate(`Percent Change in Weight` = (((Datai$Weight)-(Datai$`Initial Weight`)) / (Datai$`Initial Weight`)) * 100)%>%
+  # calculate weight loss relative to day 0
+  mutate(`Change in Weight` = (Datai$Weight)-(Datai$`Initial Weight`)) %>%
+  # calculate RBCs from raw accuri score
+  mutate(RBC = (Datai$`Accuri Count`) / 2000) %>%  
+  # calculate delta temperature relative to day 0
+  mutate(`Change in Temperature` = ((Datai$Temperature) - (Datai$`Initial Temperature`))) %>%
+  # calculate parasite density 
+  mutate(`Parasite Density` = Parasitemia * RBC) %>%
+  # calculate uninfected RBC
+  mutate(`Uninfected RBC` = (1-Parasitemia)*RBC) %>%
+  # Grouping by mouse to prevent derivative function (lag) from combining mice
+  group_by(Number) %>%
+  # calculate RBC Carnage
+  mutate(`RBC Carnage` = (((RBC)-(lag(RBC)))*10^6)/lag(`Parasite Density`)) %>% 
+  # calculate BystanderEff
+  mutate(`Bystander Effect` = (((RBC*10^6)-`Parasite Density`)-((lag(RBC)*10^6)-lag(`Parasite Density`)))/lag(`Parasite Density`)) %>%
+  # calculate Burst size
+  mutate(`Burst Size` = `Parasite Density` - lag(`Parasite Density`)) %>%
+  # calculate derivative of Temperature
+  mutate(dTemperature = Temperature - lag(Temperature)) %>%
+  # calculate derivative of RBC
+  mutate(dRBC = RBC - lag(RBC)) %>%
+  # calculate derivative of Weight
+  mutate(dWeight = Weight - lag(Weight)) %>%
+  ungroup() %>%
+  mutate(`RBC Carnage`= gsub(-Inf, NA, `RBC Carnage`)) %>%
+  mutate(`RBC Carnage`= gsub(Inf, NA, `RBC Carnage`)) %>%
+  mutate(`Bystander Effect`= gsub(-Inf, NA, `Bystander Effect`)) %>%
+  mutate(`Bystander Effect`= gsub(Inf, NA, `Bystander Effect`))
+
+# Removing a measurement error
+Dataic$RBC[2710] <- NA
+
+
+
+```
+
+# Summarizing Statistics for QTL Analysis
+
+```{r}
+#write_csv(Dataic, "DiversityOutbredPhenotypes.csv")
+Phenotypes <- Dataic %>% 
+  subset(Day %in% c(0,5:15)) %>%
+  group_by(Number) %>%
+  summarize(White = as.numeric(`Coat Color`[Day==0]== "White"),
+            Black = as.numeric(`Coat Color`[Day==0]== "Black"),
+            Star = `Star?`[Day==0],
+            StarWithoutWhite = ifelse(White==1,NA,Star),
+            Lived = `Lived?`[Day==0],
+            MinDeltaTemp = min(`Change in Temperature`, na.rm = TRUE),
+            LogMinDeltaTemp =log(abs(MinDeltaTemp)+1),
+            Zombie = ifelse(MinDeltaTemp<(-6.4),0,1),
+            DeltaTempDay5 = `Change in Temperature`[2],
+            DeltaTempDay6 = `Change in Temperature`[3],
+            Day0Weight= `Initial Weight`[Day==0],
+            MinPercWeight = min(`Percent Change in Weight`, na.rm=TRUE),
+            MinDeltaWeight = min(`Change in Weight`, na.rm = TRUE),
+            #Gainer is likely just a measure of age since only young mice are this phenotype
+            Gainer = as.numeric(MinDeltaWeight==0), 
+            MinRBC= min(RBC, na.rm=TRUE),
+            LogMinRBC = log(MinRBC),
+            MaxPD = max(`Parasite Density`, na.rm=TRUE),
+            DectectableMaxPD = ifelse(MaxPD>0,MaxPD,NA),
+            MaxParasitemia = max(Parasitemia, na.rm = TRUE),
+            DetectableMaxParasitemia = ifelse(MaxParasitemia>0,MaxParasitemia,NA),
+            UndetectedParasitemia = ifelse(MaxParasitemia==0, 1,0),
+            MaxdTemp = max(dTemperature, na.rm = TRUE),
+            MaxdWeight = max(dWeight, na.rm = TRUE),
+            MaxdRBC = max(dRBC, na.rm = TRUE),
+            MaxBystanderEffect= max(`Bystander Effect`, na.rm = TRUE),
+            MinBystanderEffect= min(`Bystander Effect`, na.rm = TRUE),
+            MaxRBCCarnage = max(`RBC Carnage`, na.rm = TRUE),
+            MaxBurstSize = max(`Burst Size`, na.rm = TRUE),
+            MinBurstSize = min(`Burst Size`, na.rm = TRUE),
+            Description = Description[1])
+
+# Changing experimental measurements from a mouse (415) that died before the experiment 
+Phenotypes[397,6:30] <- NA
+
+# Censoring the last day of mice that died from infection
+#Phenotypes$MinDeltaTemp[Phenotypes$Lived==0] <- NA
+```
+
+# Clustering Mice with Temperature and Parasitemia
+
+```{r}
+#install.packages("kmlShape")
+library("kmlShape")
+names(Dataic)
+DO_Experimentclean <- Dataic %>%
+  select("Number", "Day", "Change in Temperature")
+
+DO_Experimentclean <- as.data.frame(DO_Experimentclean)
+ShortDO_Experimentclean <- DO_Experimentclean %>%
+  subset(Day %in% 0:15 & is.na(`Change in Temperature`)==FALSE)
+
+
+ShortDO_Experimentclean <- as.data.frame(ShortDO_Experimentclean)
+myClds <- cldsLong(ShortDO_Experimentclean)
+### Reducing the data size
+#reduceTraj(myClds,nbSenators=64,nbTimes=7)
+### Clustering using shape
+set.seed(10232019)
+kmlShape(myClds,3)
+
+Temperature <- as.data.frame(myClds@clusters)
+Temperature$Number <- rownames(Temperature)
+names(Temperature)[1] <- "TempClusters"
+
+DO_Experimentclean <- Dataic %>%
+  select("Number", "Day", "Parasitemia")
+names(Dataic)
+DO_Experimentclean <- as.data.frame(DO_Experimentclean)
+ShortDO_Experimentclean <- DO_Experimentclean %>%
+  subset(Day %in% 0:15 & is.na(Parasitemia)==FALSE)
+
+
+ShortDO_Experimentclean <- as.data.frame(ShortDO_Experimentclean)
+myClds <- cldsLong(ShortDO_Experimentclean)
+### Reducing the data size
+#reduceTraj(myClds,nbSenators=64,nbTimes=7)
+### Clustering using shape
+set.seed(10232019)
+kmlShape(myClds,3)
+
+Parasitemia <- as.data.frame(myClds@clusters)
+Parasitemia$Number <- rownames(Parasitemia)
+names(Parasitemia)[1] <- "ParasitemiaClusters"
+
+Combined <-merge(Parasitemia,Temperature, by = "Number")
+```
+
+#Formatting Data for qtl2
+
+```{r Formatting Data}
+
+# Adding placeholders for Mice c(175,178,187,194,199,203,216,220,228,244,343)
+Placeholders <- tibble(Number = c(175,178,187,194,199,203,216,220,228,244,343))
+Phenotypes_missing <-bind_rows(Phenotypes, Placeholders)  %>% arrange(Number)
+
+
+axiom8_NumberSamples <- read_csv("../Raw_Data/axiom8_NumberSamples.csv")
+
+
+SemiFinal_Phenotypes <-as_tibble(merge(Phenotypes_missing, axiom8_NumberSamples, by = "Number"))
+Final_Phenotypes <-merge(SemiFinal_Phenotypes, Combined, by = "Number",all=T)
+
+# Expanding Clustering to binary traits
+axiom8_phenotypes <-Final_Phenotypes %>%
+  dplyr::select(SampleID, Number, White:TempClusters) %>%
+  mutate(TempCluster1 = ifelse(TempClusters==1,1,0),TempCluster2 = ifelse(TempClusters==2,1,0), TempCluster3 = ifelse(TempClusters==3,1,0), ParasitemiaCluster1 = ifelse(ParasitemiaClusters==1,1,0),ParasitemiaCluster2 = ifelse(ParasitemiaClusters==2,1,0), ParasitemiaCluster3 = ifelse(ParasitemiaClusters==3,1,0))
+
+axiom8_phenotypes <-axiom8_phenotypes %>%
+  mutate(Died = ifelse(Lived == 0, 1,0))
+
+# Adding Recrudescence
+MaxPDs <- axiom8_phenotypes %>% 
+  select(Number, MaxPD) %>%
+  subset(MaxPD != 0)
+
+Merged <- merge(MaxPDs,Dataic, by = "Number")
+
+SubsetMerged <- Merged %>%
+  subset(round(`Parasite Density`,3) == round(MaxPD,3))
+
+PeakPDDay <- SubsetMerged %>%
+  select(Day,Number) 
+names(PeakPDDay)[1] <- "PeakPDDay" 
+
+Recrudescence_int <- merge(Dataic, PeakPDDay, by = "Number")
+Recrudescence <- Recrudescence_int %>%
+  subset(Day==15 & `Parasite Density`>0.2 & PeakPDDay<12)
+Recrudescentmice <- Recrudescence$Number
+
+axiom8_phenotypes <- axiom8_phenotypes %>%
+  mutate(Recrudescence= ifelse(Number %in% Recrudescentmice,1,0))
+axiom8_phenotypes$Number <- as.numeric(axiom8_phenotypes$Number)
+
+
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+
+axiom8_phenotypes <-completeFun(axiom8_phenotypes,"SampleID") %>% arrange(SampleID)
+str(axiom8_phenotypes)
+p <- file("axiom8_phenotypes.csv", "w")
+writeLines("#phenotype data for axiom8",p)
+writeLines("#ncol 42",p)
+writeLines("#nrow 501",p)
+write.csv(x = axiom8_phenotypes, file = p,row.names = F)
+close(p)
+
+library(readr)
+axiom8_phenotypes <- read_csv("axiom8_phenotypes.csv", skip = 3)
+```
+
+
+
+

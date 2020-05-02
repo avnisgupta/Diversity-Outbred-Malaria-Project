@@ -1,10 +1,7 @@
 
-setwd("/Volumes/Adam/DO Project/Malaria_Diversity_Outbred_Project/Setup")
-# Load Packages
+
 library(readr)
-library(tidyverse)
-library(ggpubr)
-Data <- read_csv("Raw_Data/axiom8_RawData.csv")
+Data <- read_csv("GitHub/Diversity-Outbred-Malaria-Project/Malaria_Diversity_Outbred_Project/Setup/Creating_Phenotype_File/")
 
 Data$Sex <- "F"
 
@@ -70,7 +67,7 @@ Phenotypes[397,6:13] <- NA
 Phenotypes$MinDeltaTemp[Phenotypes$Lived==0] <- NA
 
 
-axiom8_phenotypes <- read_csv("Processed_Data/axiom8/axiom8_phenotypes.csv", skip = 3)
+axiom8_phenotypes <- read_csv("axiom7/axiom8_phenotypes.csv", skip = 3)
 
 axiom8_Par <- axiom8_phenotypes %>% select(Number,ParasitemiaClusters) 
 Together <-merge(Dataic, axiom8_Par, by = "Number")
@@ -89,7 +86,7 @@ subset(Together,is.na(Together$ParasitemiaClusters)==T)
 library(qtl2)
 library(tidyverse)
 
-memory.limit(100000)
+
 load("axiom8ex.Rda")
 load("axiom7ex_apr.Rda")
 load("axiom7ex_kinship.Rda")

@@ -1,170 +1,116 @@
-# Figure 2 Survival Curve
-
-library(survminer)
-library(RTCGA.clinical)
-library(survival)
+#install.packages("plotrix")
+library(plotrix)
 library(tidyverse)
-library(readxl)
-library(kableExtra)
+# Uploading data
+
+#setwd("~/GitHub/Diversity-Outbred-Malaria-Project/Malaria_Diversity_Outbred_Project/Setup/Creating_Phenotype_File")
+setwd("/Volumes/Adam/DO Project/Malaria_Diversity_Outbred_Project/Setup")
+
+library(tidyverse)
+library(readr)
+
+Data <- read_csv("Raw_Data/axiom8_RawData.csv")
+
+Data$Sex <- "F"
+
+# Making an initial weight and temperature dataframe
+#This converts columns we care about to numeric
+id <- c("Temperature","Weight", "Accuri Count")
+Data[id] = data.matrix(Data[id])
+
+Day0 <- Data[Data$Day==0,]
+
+Initial <- subset(Day0, select = c("Number", "Temperature", "Weight"))
+names(Initial) <- c("Number", "Initial Temperature", "Initial Weight")
+Datai <-  merge(Data,Initial)
+
+
+# Computing Mouse physiology parameters
+Dataic <- Datai %>%
+  # calculate percent weight relative to day 0
+  mutate(`Percent Bodyweight` = ((Datai$Weight) / (Datai$`Initial Weight`) * 100))  %>%
+  # calculate percent weight loss relative to day 0
+  mutate(`Percent Change in Weight` = (((Datai$Weight)-(Datai$`Initial Weight`)) / (Datai$`Initial Weight`)) * 100)%>%
+  # calculate weight loss relative to day 0
+  mutate(`Change in Weight` = (Datai$Weight)-(Datai$`Initial Weight`)) %>%
+  # calculate RBCs from raw accuri score
+  mutate(RBC = (Datai$`Accuri Count`) / 2000) %>%  
+  # calculate delta temperature relative to day 0
+  mutate(`Change in Temperature` = ((Datai$Temperature) - (Datai$`Initial Temperature`))) %>%
+  # calculate parasite density 
+  mutate(`Parasite Density` = Parasitemia * RBC)
+
+# Removing a measurement error
+Dataic$RBC[2710] <- NA
+
+Grouped <- Dataic %>%
+  subset(Description != "DO") %>%
+  group_by(Description, Day) %>%
+  summarize(RBCavg = mean(RBC,na.rm = T), RBCse = std.error(RBC, na.rm = T), Parasitemiaavg = mean(Parasitemia, na.rm = T), Parasitemiase = std.error(Parasitemia, na.rm = T), PercentChangeinWeightavg = mean(`Percent Change in Weight`,na.rm=T), PercentChangeinWeightse = std.error(`Percent Change in Weight`,na.rm = T), ChangeinTemperatureavg = mean(`Change in Temperature`, na.rm=T), ChangeinTemperaturese = std.error(`Change in Temperature`, na.rm=T), ParasiteDensityavg = mean(`Parasite Density`, na.rm=T), ParasiteDensityse = std.error(`Parasite Density`, na.rm = T) )
+
+Grouped$Description <- factor(Grouped$Description, levels = c("A/J", "C57BL/6J", "129S1/SvImJ", "NOD/ShiLtJ", "NZO/HILtJ", "CAST/EiJ", "PWK/PhJ", "WSB/EiJ","DO"))
+
+Dataic$Description <- factor(Dataic$Description, levels = c("A/J", "C57BL/6J", "129S1/SvImJ", "NOD/ShiLtJ", "NZO/HILtJ", "CAST/EiJ", "PWK/PhJ", "WSB/EiJ","DO"))
+
+strain_colors <- c("#FFDC00", "DarkGrey", "LightPink", "#0064C9", "#7FDBFF", "#2ECC40", "#FF4136", "#B10DC9", "LightGrey") 
+
+#RBC
+A <- ggplot(Grouped, aes(x = Day, y = RBCavg, color = Description))  + geom_ribbon(aes(ymax = RBCavg + RBCse, ymin = RBCavg- RBCse, fill = Description), color = NA, alpha =0.3) + geom_line( size = 0.8) + scale_color_manual(values = strain_colors) +  scale_fill_manual(values = strain_colors)+ labs(y = expression(atop(paste("10"^"6"," RBC"),"per µL of Blood")), x = "")+ theme(legend.position = "none", axis.title.y = element_text(size = 12)) + scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(0,11), expand = c(0,0))
+
+A
+
+B <- ggplot(Grouped, aes(x = Day, y = RBCavg, color = Description)) + geom_line(data = subset(Dataic,Dataic$Description=="DO"),aes(x=Day,y=RBC, group = Number), color = "Light gray", alpha = 0.5) + geom_line( size = 0.8)+ scale_color_manual(values = strain_colors)  + labs(y = expression(atop(paste("10"^"6"," RBC"),"per µL of Blood")), x = "")+ theme(legend.position = "none", axis.title.y = element_text(size = 12)) + scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(0,11), expand = c(0,0))
+
+B
+
+#PercentChangeinWeight
+C <- ggplot(Grouped, aes(x = Day, y = PercentChangeinWeightavg, color = Description))  + geom_ribbon(aes(ymax = PercentChangeinWeightavg + PercentChangeinWeightse, ymin = PercentChangeinWeightavg- PercentChangeinWeightse, fill = Description), color = NA, alpha =0.3) + geom_line( size = 0.8) + scale_color_manual(values = strain_colors) +  scale_fill_manual(values = strain_colors) + labs(y = "Percent Change in Weight", x = "")+ theme(legend.position = "none", axis.title.y = element_text(size = 12))+ scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(-30,35), expand = c(0,0))
+
+C
+
+D <- ggplot(Grouped, aes(x = Day, y = PercentChangeinWeightavg, color = Description))  + geom_line(data = subset(Dataic,Dataic$Description=="DO"),aes(x=Day,y=`Percent Change in Weight`, group = Number),color = "Light gray", alpha = 0.5) + geom_line( size = 0.8)+ scale_color_manual(values = strain_colors)  + labs(y = "Percent Change in Weight", x = "")+ theme(legend.position = "none", axis.title.y = element_text(size = 12)) + scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(-30,35), expand = c(0,0))
+
+D
+
+#Change in Temperature
+E <-  ggplot(Grouped, aes(x = Day, y = ChangeinTemperatureavg, color = Description))  + geom_ribbon(aes(ymax = ChangeinTemperatureavg + ChangeinTemperaturese, ymin = ChangeinTemperatureavg- ChangeinTemperaturese, fill = Description), color = NA, alpha =0.3) + geom_line( size = 0.8) + scale_color_manual(values = strain_colors) +  scale_fill_manual(values = strain_colors) + labs(y = "Change in Temperature (?C)", x = "")+theme(legend.position = "none", axis.title.y = element_text(size = 12)) + scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(-16,4), expand = c(0,0))
+
+E
+
+F <- ggplot(Grouped, aes(x = Day, y = ChangeinTemperatureavg, color = Description))  + geom_line(data = subset(Dataic,Dataic$Description=="DO"),aes(x=Day,y=`Change in Temperature`, group = Number),color = "Light gray", alpha = 0.5) + geom_line( size = 0.8)+ scale_color_manual(values = strain_colors)   + labs(y = "Change in Temperature (?C)", x = "")+ theme(legend.position = "none", axis.title.y = element_text(size = 12)) + scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(-16,4), expand = c(0,0))
+
+F
+
+#Parasitemia
+G <- ggplot(Grouped, aes(x = Day, y = Parasitemiaavg, color = Description))  + geom_ribbon(aes(ymax = Parasitemiaavg + Parasitemiase, ymin = Parasitemiaavg- Parasitemiase, fill = Description), color = NA, alpha =0.3) + geom_line( size = 0.8) + scale_color_manual(values = strain_colors) +  scale_fill_manual(values = strain_colors)+ labs(y = expression(atop("Parasitemia",paste("(Infected RBC per Total RBC)"))), x = "") + theme(legend.position = "none", axis.title.y = element_text(size = 12))  + scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(0,0.6), expand = c(0,0))
+
+G
+
+H <- ggplot(Grouped, aes(x = Day, y = Parasitemiaavg, color = Description)) + geom_line(data = subset(Dataic,Dataic$Description=="DO"),aes(x=Day,y=Parasitemia, group = Number), color = "Light gray", alpha = 0.5) + geom_line( size = 0.8)+ scale_color_manual(values = strain_colors)  + labs(y = expression(atop("Parasitemia",paste("(Infected RBC per Total RBC)"))), x = "")+ theme(legend.position = "none", axis.title.y = element_text(size = 12)) + scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(0,0.6), expand = c(0,0))
+
+H
+
+#Parasite Density 
+I <- ggplot(Grouped, aes(x = Day, y = ParasiteDensityavg, color = Description)) + geom_ribbon(aes(ymax = ParasiteDensityavg + ParasiteDensityse, ymin = ParasiteDensityavg- ParasiteDensityse, fill = Description), color = NA, alpha =0.3) + geom_line( size = 0.8) + scale_color_manual(values = strain_colors) +  scale_fill_manual(values = strain_colors) + labs(y = expression(atop("Parasite Density",paste("(10"^"6"," Parasites per µL of Blood)"))), x = "Day Post Infection")  + theme(legend.position = "none", axis.title.y = element_text(size = 12)) + scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(0,2.5), expand = c(0,0))
+
+I
+
+J <- ggplot(Grouped, aes(x = Day, y = ParasiteDensityavg, color = Description)) + geom_line(data = subset(Dataic,Dataic$Description=="DO"),aes(x=Day,y=`Parasite Density`, group = Number), color = "Light gray", alpha = 0.5) + geom_line( size = 0.8)+ scale_color_manual(values = strain_colors, name = "Mouse Strain")  + labs(y = expression(atop("Parasite Density",paste("(10"^"6"," Parasites per µL of Blood)"))), x = "Day Post Infection")+ scale_x_continuous(limits = c(0,15), expand = c(0,0)) +scale_y_continuous(limits = c(0,2.5), expand = c(0,0))+ theme(axis.title.y = element_text(size = 12), legend.position = "none")
+
+J
+
+
 library(ggpubr)
 
+p <- ggarrange(A,B,C,D,E,F,G,H,I,J, labels = c("A","B","C","D","E","F","G","H","I","J"), nrow = 5, ncol = 2, align = "v")
 
-library(readr)
-DO  <- read_csv("DO Experiment Data Analysis Version.csv")
+p
+#install.packages("svglite")
+library(svglite)
+ggsave("Figure2", device = "pdf", plot = p, height = 14, width = 12,units = "in" )
 
+plegend <- ggplot(Dataic, aes(x = Day, y = RBC, group = Number , color = Description)) + geom_line(size = 5) + scale_color_manual(values = strain_colors, name = "Mouse Strains") + theme(legend.position = "bottom")
 
-Measurements <- tibble(Number = as.data.frame(table(DO$Number))[,1], Count = as.data.frame(table(DO$Number))[,2])
+plegend
+ggsave("Figure2Legend", device = "pdf", plot = plegend, height = 14, width = 12,units = "in")
 
-names(Measurements) <- c("Number", "Measurements")
-
-uDO <- distinct(DO,Number, .keep_all = TRUE)
-
-
-batchDO <- dplyr::select(uDO, Batch, Number, Description, `Lived?`)
-
-batchMeasurements <-  merge(Measurements, batchDO)
-#We need columns Day, Mouse ID, Mouse.Genome, Status
-#Made a vector of the number of mice
-Mouse.ID <- batchMeasurements$Number
-batchMeasurements$Measurements[batchMeasurements$Measurements==14] <- 13
-batchMeasurements$Measurements[batchMeasurements$Measurements==20] <- 13
-batchMeasurements$Measurements[batchMeasurements$Measurements==23] <- 13
-
-#Apply and adjust for 0 to 5 day sampling gap
-Death.Day <- batchMeasurements$Measurements + 3
-#Bring the genotype to the mouse ID
-Mouse.Genotype <- batchMeasurements$Description
-Mouse.Status <- ifelse(Death.Day <15, 1,0)
-
-ACODsurv <- data.frame(Death.Day, Mouse.ID, Mouse.Status, Mouse.Genotype)
-
-fit <- survfit(Surv(Death.Day, Mouse.Status) ~ Mouse.Genotype,
-               data = ACODsurv)
-# Visualize with survminer
-ggsurvplot(fit, data = ACODsurv, size = 1.5, xlim = c(0,15), ylim = c(0,1.01), legend = "none", axes.offset = F, palette = c("#f4b5c0", "#f7db14", "#696868", "#2c9d36", "lightgrey", "#1861a9", "#82cfe2", "#f94136", "#b41183"), ggtheme = theme_classic(base_size = 18), size =1) + ylab("Percent Survival") +xlab("Days") 
-
-library(qtl2)
-library(tidyverse)
-
-memory.limit(100000)
-load("axiom8ex.Rda")
-load("axiom7ex_apr.Rda")
-load("axiom7ex_kinship.Rda")
-load("axiom7ex_sex.Rda")
-load("axiom7ex_Xcovar.Rda")
-
-
-axiom8ex_apr <-axiom7ex_apr
-axiom8ex_kinship <-axiom7ex_kinship
-axiom8ex_sex <- axiom7ex_sex
-axiom8ex_Xcovar <-axiom7ex_Xcovar
-
-
-cross <- axiom8ex
-cross_name <- "axiom8ex"
-
-# Lived
-
-## QTL
-
-pheno <- "Died"
-model <- "binary" #c("normal", "binary")
-perms <- 1000
-
-
-load(paste(paste(cross_name, sep="_", pheno), sep=".", "Rda"))
-
-load(paste(paste("perm", cross_name, sep="_", pheno), sep=".", "Rda"))
-
-summary(perm_cross_outpheno, alpha= c(0.2, 0.1, 0.05, 0.01))
-sig99_cross_outpheno <- summary(perm_cross_outpheno, alpha= 0.01)
-sig95_cross_outpheno <- summary(perm_cross_outpheno, alpha= 0.05)
-sig90_cross_outpheno <- summary(perm_cross_outpheno, alpha= 0.1)
-sig80_cross_outpheno <- summary(perm_cross_outpheno, alpha= 0.2)
-bestmarker_cross_outpheno <- rownames (max(cross_outpheno, cross$pmap))
-markerpos_bestmarker_cross_outpheno <- find_markerpos(cross, bestmarker_cross_outpheno)
-chr_cross_outpheno <- as.numeric(markerpos_bestmarker_cross_outpheno[1,1])
-
-markerpos_bestmarker_cross_outpheno
-
-threshold_cross_outpheno <-maxlod(cross_outpheno, map = NULL, chr = NULL)-1
-
-#Find peaks above significance thresholds
-peaks_cross_outpheno <- find_peaks(scan1_output = cross_outpheno,
-                                   map= cross$pmap,
-                                   threshold = threshold_cross_outpheno,
-                                   peakdrop = Inf,
-                                   drop = NULL,
-                                   prob = NULL,
-                                   thresholdX = NULL,
-                                   peakdropX = NULL,
-                                   dropX = NULL,
-                                   probX = NULL,
-                                   expand2markers = TRUE,
-                                   sort_by = "lod",
-                                   cores = 1)
-
-
-##To estimate the QTL effects from each of the 8 founder strains on the chromosome with the highest QTL
-load(paste(paste("coef", cross_name, sep="_", pheno), sep=".", "Rda"))
-
-
-##Plot qtl graph
-par(mar=c(4.1, 4.1, 0.6, 0.6))
-plot(cross_outpheno,
-     cross$pmap,col="grey61", altcol = "grey61", bgcol = "white", altbgcol = "white", gap = 0)
-
-
-
-##Add horizontal threshold lines to plot
-abline(h = sig99_cross_outpheno, col="#FF0000FF")
-abline(h = sig95_cross_outpheno, col="#FFAA00FF")
-abline(h = sig90_cross_outpheno, col="#FFFF80FF")
-
-
-
-## Parental Contribution 
-
-plot_coefCC(coef_cross_outpheno,
-            map = cross$pmap[chr_cross_outpheno],
-            columns = 1:8,
-            scan1_output = cross_outpheno,
-            add = TRUE,
-            xlim =NULL,
-            ylim = NULL,
-            bgcolor = "white", legend = "topright")
-
-
-##Calculate LOD support intervals using lod_int()-(qtl2scan)
-lod_int_bestmarker_cross_outpheno <- lod_int(scan1_output = cross_outpheno,
-                                             map= cross$pmap,
-                                             chr= chr_cross_outpheno,
-                                             lodcolumn = 1,
-                                             threshold = threshold_cross_outpheno,
-                                             peakdrop = Inf,
-                                             drop = 1.5,
-                                             expand2markers = TRUE)
-
-lod_int_bestmarker_cross_outpheno
-
-
-## Genes of interest
-
-peak_Mbp <- lod_int_bestmarker_cross_outpheno[2]
-k <- calc_kinship(axiom7ex_apr, "loco")
-query_variants <-create_variant_query_func("../Desktop/cc_variants.sqlite")
-query_genes <- create_gene_query_func("../Desktop/mouse_genes_mgi.sqlite")
-# This works but the LOD doesn't match the previous scan so obviously I'm feeding in something wrong. Actually I'm not sure I'm feeding it anything from the actual phenotype.
-out_snps <- scan1snps(axiom8ex_pr, axiom8ex$pmap, axiom8ex$pheno, k[["10"]], axiom7ex_sex, query_func=query_variants,chr= 10, start=41.39297, end=43.77759, keep_all_snps=TRUE)
-
-
-genes <- query_genes(chr = 10,start=41.39297, end=43.77759)
-
-
-
-## Plotting Interval
-
-par(mar=c(4.1, 4.1, 0.6, 0.6))
-plot(out_snps$lod, out_snps$snpinfo, drop_hilit=1.5, genes=genes)
-
-top <- top_snps(out_snps$lod, out_snps$snpinfo)
