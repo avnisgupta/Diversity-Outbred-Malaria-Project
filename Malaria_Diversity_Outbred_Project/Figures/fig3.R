@@ -10,7 +10,7 @@ library(ggpubr)
 
 
 library(readr)
-DO  <- read_csv("DO Experiment Data Analysis Version.csv")
+DO  <- read_csv("Raw_Data/axiom8_RawData.csv")
 
 
 Measurements <- tibble(Number = as.data.frame(table(DO$Number))[,1], Count = as.data.frame(table(DO$Number))[,2])
@@ -41,7 +41,7 @@ ACODsurv <- data.frame(Death.Day, Mouse.ID, Mouse.Status, Mouse.Genotype)
 fit <- survfit(Surv(Death.Day, Mouse.Status) ~ Mouse.Genotype,
                data = ACODsurv)
 # Visualize with survminer
-ggsurvplot(fit, data = ACODsurv, size = 1.5, xlim = c(0,15), ylim = c(0,1.01), legend = "none", axes.offset = F, palette = c("#f4b5c0", "#f7db14", "#696868", "#2c9d36", "lightgrey", "#1861a9", "#82cfe2", "#f94136", "#b41183"), ggtheme = theme_classic(base_size = 18), size =1) + ylab("Percent Survival") +xlab("Days") 
+ggsurvplot(fit, data = ACODsurv, size = 1.5, xlim = c(0,15), ylim = c(0,1.01), legend = "none", palette = c("#f4b5c0", "#f7db14", "#696868", "#2c9d36", "lightgrey", "#1861a9", "#82cfe2", "#f94136", "#b41183"), ggtheme = theme_classic(base_size = 18), size =1) + ylab("Percent Survival") +xlab("Days") 
 
 library(qtl2)
 library(tidyverse)
@@ -152,6 +152,11 @@ lod_int_bestmarker_cross_outpheno
 
 peak_Mbp <- lod_int_bestmarker_cross_outpheno[2]
 k <- calc_kinship(axiom7ex_apr, "loco")
+
+# Download these in order to view genes
+# download.file("https://ndownloader.figshare.com/files/18533342", "cc_variants.sqlite")
+# download.file("https://ndownloader.figshare.com/files/17609252", "mouse_genes_mgi.sqlite")
+
 query_variants <-create_variant_query_func("../Desktop/cc_variants.sqlite")
 query_genes <- create_gene_query_func("../Desktop/mouse_genes_mgi.sqlite")
 # This works but the LOD doesn't match the previous scan so obviously I'm feeding in something wrong. Actually I'm not sure I'm feeding it anything from the actual phenotype.

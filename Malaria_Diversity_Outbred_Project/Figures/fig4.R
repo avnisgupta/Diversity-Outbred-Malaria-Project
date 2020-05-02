@@ -1,7 +1,10 @@
+#setwd("~/GitHub/Diversity-Outbred-Malaria-Project/Malaria_Diversity_Outbred_Project/Setup/Creating_Phenotype_File")
+setwd("/Volumes/Adam/DO Project/Malaria_Diversity_Outbred_Project/Setup")
 
-
+library(tidyverse)
 library(readr)
-Data <- read_csv("GitHub/Diversity-Outbred-Malaria-Project/Malaria_Diversity_Outbred_Project/Setup/Creating_Phenotype_File/")
+
+Data <- read_csv("Raw_Data/axiom8_RawData.csv")
 
 Data$Sex <- "F"
 
